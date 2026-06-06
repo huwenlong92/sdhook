@@ -142,7 +142,7 @@ Create config files and install the systemd service:
 sudo sdhook install-systemd
 ```
 
-This command creates `/etc/sdhook/config.json`, `/etc/sdhook/projects/example/example.json`, `/etc/sdhook/projects/example/logs/`, the `sdhook` system user, and `/etc/systemd/system/sdhook.service`. It also runs `systemctl daemon-reload` and `systemctl enable --now sdhook`.
+This command creates `/etc/sdhook/config.json`, `/etc/sdhook/projects/example/example.json`, `/etc/sdhook/projects/example/logs/`, the `sdhook` system user with UID/GID `9801`, and `/etc/systemd/system/sdhook.service`. It also runs `systemctl daemon-reload` and `systemctl enable --now sdhook`.
 
 Create files and the unit without starting the service:
 
@@ -154,6 +154,63 @@ Use a custom config or binary path:
 
 ```bash
 sudo sdhook install-systemd --config /etc/sdhook/config.json --bin /usr/local/bin/sdhook
+```
+
+Run the service as root:
+
+```bash
+sudo sdhook install-systemd --user root --group root --uid 0 --gid 0
+```
+
+Root mode is useful when deployment commands need direct access to `docker compose`, project directories, or system services. Be careful: webhook-triggered commands will also run as root.
+
+SDHook rejects clearly dangerous deployment commands before saving config and before running deploys, including recursive deletion of system paths, `mkfs`, `dd of=/dev/...`, reboot/shutdown commands, `curl`, `wget`, and `docker system prune -af`.
+
+The installer command may still use `curl ... | sh` because it is run manually by the operator. The restriction only applies to project deployment commands.
+
+If deployment needs a remote script, download and review it manually first, then execute the local script from SDHook:
+
+```bash
+install -d /etc/sdhook/projects/blog
+install -m 0700 deploy.sh /etc/sdhook/projects/blog/deploy.sh
+```
+
+Configure this command in SDHook:
+
+```bash
+bash /etc/sdhook/projects/blog/deploy.sh
+```
+
+This is a guard against mistakes, not a full shell sandbox. In root mode, only configure trusted webhooks, trusted branch/tag filters, and trusted deployment commands.
+
+If an older install created `uid=999(sdhook)`, it can collide with common container UIDs and make Postgres/Redis processes appear as `sdhook` in `ps`. Migrate it manually:
+
+```bash
+sudo systemctl stop sdhook
+sudo userdel sdhook
+sudo groupdel sdhook 2>/dev/null || true
+sudo sdhook install-systemd --uid 9801 --gid 9801
+```
+
+Or migrate to root mode:
+
+```bash
+sudo systemctl stop sdhook
+sudo userdel sdhook
+sudo groupdel sdhook 2>/dev/null || true
+sudo sdhook install-systemd --user root --group root --uid 0 --gid 0
+```
+
+Check:
+
+```bash
+id sdhook
+```
+
+Expected:
+
+```text
+uid=9801(sdhook) gid=9801(sdhook) groups=9801(sdhook)
 ```
 
 Example unit:
@@ -176,6 +233,14 @@ WorkingDirectory=/etc/sdhook
 [Install]
 WantedBy=multi-user.target
 ```
+
+The source template is stored at:
+
+```text
+packaging/systemd/sdhook.service.tpl
+```
+
+`sdhook install-systemd` renders the embedded template and replaces `{{USER}}`, `{{GROUP}}`, `{{BIN}}`, `{{CONFIG}}`, and `{{WORKING_DIR}}`.
 
 Common commands:
 
