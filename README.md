@@ -1,6 +1,6 @@
-# SdHook
+# SDHook
 
-SdHook is a lightweight webhook deployment tool with a built-in Web UI.
+SDHook is a lightweight webhook deployment tool with a built-in Web UI.
 
 It runs as a single binary and manages automatic deployments for multiple projects from GitHub, Gitee, Gitea, GitLab, Harbor, or a generic webhook endpoint.
 
@@ -50,8 +50,10 @@ Default files:
 ~/.sdhook/
 ├── config.json
 ├── projects/
-│   └── example.json
-└── logs/
+│   └── example/
+│       ├── example.json
+│       └── logs/
+│           └── deploy.log
 ```
 
 ## Config
@@ -82,7 +84,16 @@ Main config:
 }
 ```
 
-Projects are stored as JSON files under `projects_dir`. The Web UI can create and edit project files directly.
+Projects are stored as directories under `projects_dir`. The Web UI can create and edit project files directly.
+
+```text
+projects/<project>/
+├── <project>.json
+└── logs/
+    └── deploy.log
+```
+
+When a project is removed from the Web UI, SDHook renames its config to `<project>.json.disabled`. Disabled files are not loaded into the UI. To remove a project permanently, delete the whole `projects/<project>/` directory.
 
 ## Webhook URLs
 
@@ -123,11 +134,33 @@ Harbor supports image-level filtering with regex:
 
 ## systemd
 
+`sdhook` and `sdhook start` both start the web service. Startup logs are written to stdout. When running under systemd, read startup and runtime logs from journal.
+
+Create config files and install the systemd service:
+
+```bash
+sudo sdhook install-systemd
+```
+
+This command creates `/etc/sdhook/config.json`, `/etc/sdhook/projects/example/example.json`, `/etc/sdhook/projects/example/logs/`, the `sdhook` system user, and `/etc/systemd/system/sdhook.service`. It also runs `systemctl daemon-reload` and `systemctl enable --now sdhook`.
+
+Create files and the unit without starting the service:
+
+```bash
+sudo sdhook install-systemd --no-start
+```
+
+Use a custom config or binary path:
+
+```bash
+sudo sdhook install-systemd --config /etc/sdhook/config.json --bin /usr/local/bin/sdhook
+```
+
 Example unit:
 
 ```ini
 [Unit]
-Description=SdHook webhook deployment service
+Description=SDHook webhook deployment service
 After=network-online.target
 Wants=network-online.target
 
@@ -154,18 +187,40 @@ systemctl restart sdhook
 systemctl stop sdhook
 ```
 
-## Upgrade
-
-Run the installer again:
+View service logs:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/huwenlong92/sdhook/main/scripts/install.sh | sh
+journalctl -u sdhook -f
+journalctl -u sdhook --since "1 hour ago"
 ```
 
-Then restart your service:
+Deployment logs are stored under `projects/<project>/logs/deploy.log` and are also available in the Web UI project detail page.
+
+## Upgrade
+
+Upgrade to the latest release:
+
+```bash
+sdhook upgrade
+```
+
+Upgrade to a specific version:
+
+```bash
+sdhook upgrade 0.1.1
+```
+
+Restart your service:
 
 ```bash
 systemctl restart sdhook
+```
+
+If SDHook is installed under `/usr/local/bin` and your user cannot write there:
+
+```bash
+sudo sdhook upgrade
+sudo systemctl restart sdhook
 ```
 
 ## Releases

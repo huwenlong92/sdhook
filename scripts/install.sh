@@ -28,12 +28,14 @@ case "$(uname -m)" in
 esac
 
 if [ "$VERSION" = "latest" ]; then
+  echo "[1/5] Resolving latest release"
   TAG="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)"
 else
   case "$VERSION" in
     v*) TAG="$VERSION" ;;
     *) TAG="v$VERSION" ;;
   esac
+  echo "[1/5] Using release ${TAG}"
 fi
 
 if [ -z "${TAG:-}" ]; then
@@ -50,8 +52,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "Downloading ${URL}"
-curl -fL "$URL" -o "$TMP_DIR/$ASSET"
+echo "[2/5] Downloading ${ASSET}"
+echo "      ${URL}"
+curl -fL --progress-bar "$URL" -o "$TMP_DIR/$ASSET"
+echo "[3/5] Extracting archive"
 tar -xzf "$TMP_DIR/$ASSET" -C "$TMP_DIR"
 
 BIN_PATH="$(find "$TMP_DIR" -type f -name sdhook | head -n 1)"
@@ -60,8 +64,9 @@ if [ -z "$BIN_PATH" ]; then
   exit 1
 fi
 
+echo "[4/5] Installing to ${PREFIX}/bin/sdhook"
 install -d "$PREFIX/bin"
 install -m 0755 "$BIN_PATH" "$PREFIX/bin/sdhook"
 
-echo "Installed: $PREFIX/bin/sdhook"
+echo "[5/5] Installed: $PREFIX/bin/sdhook"
 "$PREFIX/bin/sdhook" --version 2>/dev/null || "$PREFIX/bin/sdhook" --help
