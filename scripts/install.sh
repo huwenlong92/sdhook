@@ -56,7 +56,11 @@ echo "[2/5] Downloading ${ASSET}"
 echo "      ${URL}"
 curl -fL --progress-bar "$URL" -o "$TMP_DIR/$ASSET"
 echo "[3/5] Extracting archive"
-tar -xzf "$TMP_DIR/$ASSET" -C "$TMP_DIR"
+if tar --no-xattrs -xzf "$TMP_DIR/$ASSET" -C "$TMP_DIR" >/dev/null 2>&1; then
+  :
+else
+  tar -xzf "$TMP_DIR/$ASSET" -C "$TMP_DIR"
+fi
 
 BIN_PATH="$(find "$TMP_DIR" -type f -name sdhook | head -n 1)"
 if [ -z "$BIN_PATH" ]; then
