@@ -2,7 +2,7 @@
 
 SdHook is a lightweight webhook deployment tool with a built-in Web UI.
 
-It runs as a single binary and can manage deployments for multiple projects from GitHub, Gitee, Gitea, Harbor, or a generic webhook endpoint.
+It runs as a single binary and can manage deployments for multiple projects from GitHub, Gitee, Gitea, GitLab, Harbor, or a generic webhook endpoint.
 
 ## Install
 
@@ -95,6 +95,7 @@ Project `example`:
 GitHub:  POST http://server:9000/hook/github/example
 Gitee:   POST http://server:9000/hook/gitee/example
 Gitea:   POST http://server:9000/hook/gitea/example
+GitLab:  POST http://server:9000/hook/gitlab/example
 Harbor:  POST http://server:9000/hook/harbor/example
 Generic: POST http://server:9000/hook/generic/example?token=example-deploy-token
 ```
