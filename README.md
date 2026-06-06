@@ -196,6 +196,68 @@ journalctl -u sdhook --since "1 hour ago"
 
 Deployment logs are stored under `projects/<project>/logs/deploy.log` and are also available in the Web UI project detail page.
 
+## Nginx Reverse Proxy
+
+SDHook listens on `127.0.0.1:9000` or `0.0.0.0:9000` by default. Use Nginx if you want to serve it with a domain name and HTTPS.
+
+Example `/etc/nginx/conf.d/sdhook.example.com.conf`:
+
+```nginx
+# Redirect HTTP to HTTPS
+server {
+    listen 80;
+    server_name sdhook.example.com;
+    return 301 https://$host$request_uri;
+}
+
+# SDHook
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name sdhook.example.com;
+
+    client_max_body_size 20m;
+
+    ssl_certificate     /etc/nginx/ssl/cf.pem;
+    ssl_certificate_key /etc/nginx/ssl/cf.key;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    access_log /var/log/nginx/sdhook.example.com.access.log;
+    error_log  /var/log/nginx/sdhook.example.com.error.log warn;
+
+    location / {
+        proxy_pass http://127.0.0.1:9000;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 300s;
+        proxy_read_timeout 300s;
+
+        proxy_buffering off;
+        proxy_redirect off;
+    }
+}
+```
+
+Check and reload Nginx:
+
+```bash
+nginx -t
+systemctl reload nginx
+```
+
+Replace these values:
+
+- `sdhook.example.com`: your domain name.
+- `/etc/nginx/ssl/cf.pem` and `/etc/nginx/ssl/cf.key`: your certificate files.
+- `http://127.0.0.1:9000`: your SDHook listen address and port.
+
 ## Upgrade
 
 Upgrade to the latest release:
