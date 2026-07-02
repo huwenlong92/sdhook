@@ -4,6 +4,8 @@ set -eu
 REPO="${GITHUB_REPO:-huwenlong92/sdhook}"
 PREFIX="${PREFIX:-/usr/local}"
 VERSION="${VERSION:-latest}"
+AUTO_UPGRADE="${AUTO_UPGRADE:-${SDHOOK_AGENT_AUTO_UPGRADE:-true}}"
+UPGRADE_REPO="${UPGRADE_REPO:-${SDHOOK_AGENT_UPGRADE_REPO:-$REPO}}"
 
 INSTALL_SYSTEMD="${INSTALL_SYSTEMD:-0}"
 SERVER="${SERVER:-${SDHOOK_AGENT_SERVER:-}}"
@@ -192,6 +194,8 @@ install_systemd() {
 server = "$(toml_escape "$SERVER")"
 key = "$(toml_escape "$NODE_KEY")"
 token = "$(toml_escape "$TOKEN")"
+auto_upgrade = $AUTO_UPGRADE
+upgrade_repo = "$(toml_escape "$UPGRADE_REPO")"
 TOML
   install -m 0600 "$TMP_DIR/config.toml" "$CONFIG"
   chown "$SERVICE_USER:$SERVICE_GROUP" "$CONFIG"

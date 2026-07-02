@@ -108,6 +108,17 @@ Generated agent config:
 server = "https://sdhook.example.com"
 key = "server-a"
 token = "xxx"
+auto_upgrade = true
+upgrade_repo = "huwenlong92/sdhook"
+```
+
+Agent auto-upgrade starts after the installed agent version includes this capability. Older agents do not understand heartbeat version sync, so upgrade them once with `install-agent.sh`; after that, they follow the main SDHook server version during idle heartbeat windows.
+
+Manual agent upgrade:
+
+```bash
+sdhook-agent upgrade
+sdhook-agent upgrade 0.1.16
 ```
 
 Check the agent:
