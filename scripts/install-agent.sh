@@ -6,6 +6,11 @@ PREFIX="${PREFIX:-/usr/local}"
 VERSION="${VERSION:-latest}"
 AUTO_UPGRADE="${AUTO_UPGRADE:-${SDHOOK_AGENT_AUTO_UPGRADE:-true}}"
 UPGRADE_REPO="${UPGRADE_REPO:-${SDHOOK_AGENT_UPGRADE_REPO:-$REPO}}"
+GITHUB_PROXY="${GITHUB_PROXY:-${SDHOOK_AGENT_GITHUB_PROXY:-}}"
+RELEASE_BASE_URL="${RELEASE_BASE_URL:-${SDHOOK_AGENT_RELEASE_BASE_URL:-${SDHOOK_RELEASE_BASE_URL:-}}}"
+CURL_CONNECT_TIMEOUT="${CURL_CONNECT_TIMEOUT:-15}"
+CURL_RETRY="${CURL_RETRY:-2}"
+CURL_RETRY_DELAY="${CURL_RETRY_DELAY:-2}"
 
 INSTALL_SYSTEMD="${INSTALL_SYSTEMD:-0}"
 SERVER="${SERVER:-${SDHOOK_AGENT_SERVER:-}}"
@@ -44,6 +49,85 @@ toml_escape() {
   printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
 }
 
+github_proxy_url() {
+  case "$GITHUB_PROXY" in
+    *'{url}'*) printf '%s\n' "$(printf '%s' "$GITHUB_PROXY" | sed "s|{url}|$(sed_escape "$1")|g")" ;;
+    *) printf '%s/%s\n' "${GITHUB_PROXY%/}" "$1" ;;
+  esac
+}
+
+should_proxy_url() {
+  case "$1" in
+    https://github.com/*|https://api.github.com/*|https://raw.githubusercontent.com/*) [ -n "$GITHUB_PROXY" ] ;;
+    *) return 1 ;;
+  esac
+}
+
+curl_text() {
+  url="$1"
+  if should_proxy_url "$url"; then
+    proxy_url="$(github_proxy_url "$url")"
+    if curl -fsSL --connect-timeout "$CURL_CONNECT_TIMEOUT" --retry "$CURL_RETRY" --retry-delay "$CURL_RETRY_DELAY" "$proxy_url"; then
+      return 0
+    fi
+    echo "github proxy failed, fallback to ${url}" >&2
+  fi
+  curl -fsSL --connect-timeout "$CURL_CONNECT_TIMEOUT" --retry "$CURL_RETRY" --retry-delay "$CURL_RETRY_DELAY" "$url"
+}
+
+curl_file() {
+  url="$1"
+  dest="$2"
+  if should_proxy_url "$url"; then
+    proxy_url="$(github_proxy_url "$url")"
+    echo "      ${proxy_url}"
+    if curl -fL --connect-timeout "$CURL_CONNECT_TIMEOUT" --retry "$CURL_RETRY" --retry-delay "$CURL_RETRY_DELAY" --progress-bar "$proxy_url" -o "$dest"; then
+      return 0
+    fi
+    echo "github proxy failed, fallback to ${url}" >&2
+  fi
+  echo "      ${url}"
+  curl -fL --connect-timeout "$CURL_CONNECT_TIMEOUT" --retry "$CURL_RETRY" --retry-delay "$CURL_RETRY_DELAY" --progress-bar "$url" -o "$dest"
+}
+
+release_asset_url() {
+  tag="$1"
+  asset="$2"
+  if [ -n "$RELEASE_BASE_URL" ]; then
+    case "$RELEASE_BASE_URL" in
+      *'{tag}'*|*'{asset}'*)
+        printf '%s\n' "$(printf '%s' "$RELEASE_BASE_URL" | sed -e "s|{tag}|$(sed_escape "$tag")|g" -e "s|{asset}|$(sed_escape "$asset")|g")"
+        ;;
+      *)
+        printf '%s/%s/%s\n' "${RELEASE_BASE_URL%/}" "$tag" "$asset"
+        ;;
+    esac
+  else
+    printf 'https://github.com/%s/releases/download/%s/%s\n' "$REPO" "$tag" "$asset"
+  fi
+}
+
+write_builtin_agent_service_template() {
+  cat > "$1" <<'UNIT'
+[Unit]
+Description=SDHook Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{USER}}
+Group={{GROUP}}
+WorkingDirectory={{WORKING_DIR}}
+ExecStart={{BIN}} --config {{CONFIG}}
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+}
+
 need install
 need sed
 
@@ -80,7 +164,12 @@ else
 
   if [ "$VERSION" = "latest" ]; then
     echo "[1/5] Resolving latest release"
-    TAG="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)"
+    if [ -n "$RELEASE_BASE_URL" ]; then
+      TAG="$(curl_text "${RELEASE_BASE_URL%/}/latest.json" | sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' | head -n 1 || true)"
+    fi
+    if [ -z "${TAG:-}" ]; then
+      TAG="$(curl_text "https://api.github.com/repos/${REPO}/releases/latest" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)"
+    fi
   else
     case "$VERSION" in
       v*) TAG="$VERSION" ;;
@@ -95,11 +184,10 @@ else
   fi
 
   ASSET="sdhook-agent-${OS}-${ARCH}.tar.gz"
-  URL="https://github.com/${REPO}/releases/download/${TAG}/${ASSET}"
+  URL="$(release_asset_url "$TAG" "$ASSET")"
 
   echo "[2/5] Downloading ${ASSET}"
-  echo "      ${URL}"
-  curl -fL --progress-bar "$URL" -o "$TMP_DIR/$ASSET"
+  curl_file "$URL" "$TMP_DIR/$ASSET"
   echo "[3/5] Extracting archive"
   if tar --no-xattrs -xzf "$TMP_DIR/$ASSET" -C "$TMP_DIR" >/dev/null 2>&1; then
     :
@@ -135,7 +223,16 @@ copy_deploy_file() {
     exit 1
   fi
   need curl
-  curl -fsSL "https://raw.githubusercontent.com/${REPO}/${TAG}/deploy/${rel_path}" -o "$dest"
+  if curl_file "https://raw.githubusercontent.com/${REPO}/${TAG}/deploy/${rel_path}" "$dest"; then
+    return
+  fi
+  if [ "$rel_path" = "systemd/sdhook-agent.service.tpl" ]; then
+    echo "using built-in systemd template fallback" >&2
+    write_builtin_agent_service_template "$dest"
+    return
+  fi
+  echo "failed to fetch deploy template: ${rel_path}" >&2
+  exit 1
 }
 
 install_systemd() {
@@ -197,6 +294,12 @@ token = "$(toml_escape "$TOKEN")"
 auto_upgrade = $AUTO_UPGRADE
 upgrade_repo = "$(toml_escape "$UPGRADE_REPO")"
 TOML
+  if [ -n "$GITHUB_PROXY" ]; then
+    printf 'github_proxy = "%s"\n' "$(toml_escape "$GITHUB_PROXY")" >> "$TMP_DIR/config.toml"
+  fi
+  if [ -n "$RELEASE_BASE_URL" ]; then
+    printf 'release_base_url = "%s"\n' "$(toml_escape "$RELEASE_BASE_URL")" >> "$TMP_DIR/config.toml"
+  fi
   install -m 0600 "$TMP_DIR/config.toml" "$CONFIG"
   chown "$SERVICE_USER:$SERVICE_GROUP" "$CONFIG"
   chown -R "$SERVICE_USER:$SERVICE_GROUP" "$DATA_DIR"

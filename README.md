@@ -110,9 +110,27 @@ key = "server-a"
 token = "xxx"
 auto_upgrade = true
 upgrade_repo = "huwenlong92/sdhook"
+# Optional GitHub acceleration proxy. SDHook falls back to original GitHub URLs if it fails.
+github_proxy = "https://gh-proxy.example.com/"
+# Optional release mirror. Default asset path is {base}/{tag}/{asset}.
+release_base_url = "https://cdn.example.com/sdhook/releases"
 ```
 
 Agent auto-upgrade starts after the installed agent version includes this capability. Older agents do not understand heartbeat version sync, so upgrade them once with `install-agent.sh`; after that, they follow the main SDHook server version during idle heartbeat windows.
+
+For servers with unstable GitHub access, use the installed SDHook server to serve the installer script and pass a proxy or mirror:
+
+```bash
+curl -fsSL https://sdhook.example.com/scripts/install-agent.sh | \
+  sudo env INSTALL_SYSTEMD=1 \
+  SERVER=https://sdhook.example.com \
+  NODE_KEY=server-a \
+  TOKEN=xxx \
+  GITHUB_PROXY=https://gh-proxy.example.com/ \
+  sh
+```
+
+`GITHUB_PROXY` supports both `https://proxy.example.com/` and `https://proxy.example.com/{url}` formats. `RELEASE_BASE_URL` / `SDHOOK_AGENT_RELEASE_BASE_URL` can point to an OSS, CDN, or private mirror; it supports `{tag}` and `{asset}` placeholders.
 
 Manual agent upgrade:
 

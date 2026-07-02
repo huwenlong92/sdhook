@@ -4,6 +4,11 @@ set -eu
 REPO="${GITHUB_REPO:-huwenlong92/sdhook}"
 PREFIX="${PREFIX:-/usr/local}"
 VERSION="${VERSION:-latest}"
+GITHUB_PROXY="${GITHUB_PROXY:-${SDHOOK_GITHUB_PROXY:-}}"
+RELEASE_BASE_URL="${RELEASE_BASE_URL:-${SDHOOK_RELEASE_BASE_URL:-}}"
+CURL_CONNECT_TIMEOUT="${CURL_CONNECT_TIMEOUT:-15}"
+CURL_RETRY="${CURL_RETRY:-2}"
+CURL_RETRY_DELAY="${CURL_RETRY_DELAY:-2}"
 
 INSTALL_SYSTEMD="${INSTALL_SYSTEMD:-0}"
 CONFIG="${CONFIG:-/etc/sdhook/config.toml}"
@@ -34,6 +39,57 @@ parent_dir() {
 
 sed_escape() {
   printf '%s' "$1" | sed 's/[|&\\]/\\&/g'
+}
+
+github_proxy_url() {
+  case "$GITHUB_PROXY" in
+    *'{url}'*) printf '%s\n' "$(printf '%s' "$GITHUB_PROXY" | sed "s|{url}|$(sed_escape "$1")|g")" ;;
+    *) printf '%s/%s\n' "${GITHUB_PROXY%/}" "$1" ;;
+  esac
+}
+
+curl_text() {
+  url="$1"
+  if [ -n "$GITHUB_PROXY" ]; then
+    proxy_url="$(github_proxy_url "$url")"
+    if curl -fsSL --connect-timeout "$CURL_CONNECT_TIMEOUT" --retry "$CURL_RETRY" --retry-delay "$CURL_RETRY_DELAY" "$proxy_url"; then
+      return 0
+    fi
+    echo "github proxy failed, fallback to ${url}" >&2
+  fi
+  curl -fsSL --connect-timeout "$CURL_CONNECT_TIMEOUT" --retry "$CURL_RETRY" --retry-delay "$CURL_RETRY_DELAY" "$url"
+}
+
+curl_file() {
+  url="$1"
+  dest="$2"
+  if [ -n "$GITHUB_PROXY" ]; then
+    proxy_url="$(github_proxy_url "$url")"
+    echo "      ${proxy_url}"
+    if curl -fL --connect-timeout "$CURL_CONNECT_TIMEOUT" --retry "$CURL_RETRY" --retry-delay "$CURL_RETRY_DELAY" --progress-bar "$proxy_url" -o "$dest"; then
+      return 0
+    fi
+    echo "github proxy failed, fallback to ${url}" >&2
+  fi
+  echo "      ${url}"
+  curl -fL --connect-timeout "$CURL_CONNECT_TIMEOUT" --retry "$CURL_RETRY" --retry-delay "$CURL_RETRY_DELAY" --progress-bar "$url" -o "$dest"
+}
+
+release_asset_url() {
+  tag="$1"
+  asset="$2"
+  if [ -n "$RELEASE_BASE_URL" ]; then
+    case "$RELEASE_BASE_URL" in
+      *'{tag}'*|*'{asset}'*)
+        printf '%s\n' "$(printf '%s' "$RELEASE_BASE_URL" | sed -e "s|{tag}|$(sed_escape "$tag")|g" -e "s|{asset}|$(sed_escape "$asset")|g")"
+        ;;
+      *)
+        printf '%s/%s/%s\n' "${RELEASE_BASE_URL%/}" "$tag" "$asset"
+        ;;
+    esac
+  else
+    printf 'https://github.com/%s/releases/download/%s/%s\n' "$REPO" "$tag" "$asset"
+  fi
 }
 
 need install
@@ -72,7 +128,12 @@ else
 
   if [ "$VERSION" = "latest" ]; then
     echo "[1/5] Resolving latest release"
-    TAG="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)"
+    if [ -n "$RELEASE_BASE_URL" ]; then
+      TAG="$(curl_text "${RELEASE_BASE_URL%/}/latest.json" | sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' | head -n 1 || true)"
+    fi
+    if [ -z "${TAG:-}" ]; then
+      TAG="$(curl_text "https://api.github.com/repos/${REPO}/releases/latest" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)"
+    fi
   else
     case "$VERSION" in
       v*) TAG="$VERSION" ;;
@@ -87,11 +148,10 @@ else
   fi
 
   ASSET="sdhook-${OS}-${ARCH}.tar.gz"
-  URL="https://github.com/${REPO}/releases/download/${TAG}/${ASSET}"
+  URL="$(release_asset_url "$TAG" "$ASSET")"
 
   echo "[2/5] Downloading ${ASSET}"
-  echo "      ${URL}"
-  curl -fL --progress-bar "$URL" -o "$TMP_DIR/$ASSET"
+  curl_file "$URL" "$TMP_DIR/$ASSET"
   echo "[3/5] Extracting archive"
   if tar --no-xattrs -xzf "$TMP_DIR/$ASSET" -C "$TMP_DIR" >/dev/null 2>&1; then
     :
@@ -124,7 +184,7 @@ copy_deploy_file() {
     exit 1
   fi
   need curl
-  curl -fsSL "https://raw.githubusercontent.com/${REPO}/${TAG}/deploy/${rel_path}" -o "$dest"
+  curl_file "https://raw.githubusercontent.com/${REPO}/${TAG}/deploy/${rel_path}" "$dest"
 }
 
 install_systemd() {
