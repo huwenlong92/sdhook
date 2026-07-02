@@ -1,0 +1,18 @@
+# HTTP 服务监听端口，Web UI 和 webhook 都使用这个端口。
+port = 9000
+
+# 线上部署日志目录。
+logs_dir = "/var/log/sdhook"
+
+# 用户、项目配置、部署记录和回滚记录的数据库配置。
+[database]
+# 数据库驱动。当前可用 SQLite。
+driver = "sqlite"
+
+# SQLite 属于应用运行状态数据，线上放在 /var/lib/sdhook。
+# 命令行可用 --db-path 覆盖。
+path = "/var/lib/sdhook/sdhook.db"
+
+# Postgres 连接地址预留。
+# 命令行可用 --db-url 覆盖。
+# url = "postgres://sdhook:password@127.0.0.1:5432/sdhook"

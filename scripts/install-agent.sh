@@ -6,17 +6,19 @@ PREFIX="${PREFIX:-/usr/local}"
 VERSION="${VERSION:-latest}"
 
 INSTALL_SYSTEMD="${INSTALL_SYSTEMD:-0}"
-CONFIG="${CONFIG:-/etc/sdhook/config.toml}"
-SERVICE_USER="${SERVICE_USER:-sdhook}"
-SERVICE_GROUP="${SERVICE_GROUP:-sdhook}"
-SERVICE_UID="${SERVICE_UID:-9801}"
-SERVICE_GID="${SERVICE_GID:-9801}"
+SERVER="${SERVER:-${SDHOOK_AGENT_SERVER:-}}"
+NODE_KEY="${NODE_KEY:-${SDHOOK_AGENT_KEY:-}}"
+TOKEN="${TOKEN:-${SDHOOK_AGENT_TOKEN:-}}"
+SERVICE_USER="${SERVICE_USER:-root}"
+SERVICE_GROUP="${SERVICE_GROUP:-root}"
+SERVICE_UID="${SERVICE_UID:-0}"
+SERVICE_GID="${SERVICE_GID:-0}"
 NO_START="${NO_START:-0}"
-DATA_DIR="${DATA_DIR:-/var/lib/sdhook}"
-LOGS_DIR="${LOGS_DIR:-/var/log/sdhook}"
-SYSTEMD_UNIT="${SYSTEMD_UNIT:-/etc/systemd/system/sdhook.service}"
+DATA_DIR="${DATA_DIR:-/var/lib/sdhook-agent}"
+ENV_FILE="${ENV_FILE:-/etc/sdhook-agent/agent.env}"
+SYSTEMD_UNIT="${SYSTEMD_UNIT:-/etc/systemd/system/sdhook-agent.service}"
 DEPLOY_DIR="${DEPLOY_DIR:-}"
-SDHOOK_BIN_PATH="${SDHOOK_BIN_PATH:-}"
+SDHOOK_AGENT_BIN_PATH="${SDHOOK_AGENT_BIN_PATH:-}"
 
 need() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -34,6 +36,10 @@ parent_dir() {
 
 sed_escape() {
   printf '%s' "$1" | sed 's/[|&\\]/\\&/g'
+}
+
+env_escape() {
+  printf '%s' "$1" | sed "s/'/'\"'\"'/g"
 }
 
 need install
@@ -58,13 +64,13 @@ cleanup() {
 }
 trap cleanup EXIT
 
-if [ -n "$SDHOOK_BIN_PATH" ]; then
+if [ -n "$SDHOOK_AGENT_BIN_PATH" ]; then
   TAG="${VERSION:-local}"
   if [ "$TAG" = "latest" ]; then
     TAG="local"
   fi
-  BIN_PATH="$SDHOOK_BIN_PATH"
-  echo "[1/5] Using local binary"
+  BIN_PATH="$SDHOOK_AGENT_BIN_PATH"
+  echo "[1/5] Using local agent binary"
   echo "      $BIN_PATH"
 else
   need curl
@@ -86,7 +92,7 @@ else
     exit 1
   fi
 
-  ASSET="sdhook-${OS}-${ARCH}.tar.gz"
+  ASSET="sdhook-agent-${OS}-${ARCH}.tar.gz"
   URL="https://github.com/${REPO}/releases/download/${TAG}/${ASSET}"
 
   echo "[2/5] Downloading ${ASSET}"
@@ -99,14 +105,14 @@ else
     tar -xzf "$TMP_DIR/$ASSET" -C "$TMP_DIR"
   fi
 
-  BIN_PATH="$(find "$TMP_DIR" -type f -name sdhook | head -n 1)"
+  BIN_PATH="$(find "$TMP_DIR" -type f -name sdhook-agent | head -n 1)"
   if [ -z "$BIN_PATH" ]; then
-    echo "sdhook binary not found in archive" >&2
+    echo "sdhook-agent binary not found in archive" >&2
     exit 1
   fi
 fi
 
-BIN_DEST="$PREFIX/bin/sdhook"
+BIN_DEST="$PREFIX/bin/sdhook-agent"
 
 echo "[4/5] Installing to ${BIN_DEST}"
 install -d "$PREFIX/bin"
@@ -120,7 +126,7 @@ copy_deploy_file() {
     return
   fi
   if [ "${TAG:-local}" = "local" ]; then
-    echo "DEPLOY_DIR is required when INSTALL_SYSTEMD=1 with SDHOOK_BIN_PATH" >&2
+    echo "DEPLOY_DIR is required when INSTALL_SYSTEMD=1 with SDHOOK_AGENT_BIN_PATH" >&2
     exit 1
   fi
   need curl
@@ -137,16 +143,15 @@ install_systemd() {
     echo "INSTALL_SYSTEMD=1 must be run as root" >&2
     exit 1
   fi
+  if [ -z "$SERVER" ] || [ -z "$NODE_KEY" ] || [ -z "$TOKEN" ]; then
+    echo "INSTALL_SYSTEMD=1 requires SERVER, NODE_KEY, and TOKEN" >&2
+    exit 1
+  fi
   need sed
   need systemctl
 
-  config_dir="$(parent_dir "$CONFIG")"
-  install -d "$config_dir" "$DATA_DIR" "$LOGS_DIR"
-
-  if [ ! -f "$CONFIG" ]; then
-    copy_deploy_file "sdhook/config.toml" "$TMP_DIR/config.toml"
-    install -m 0644 "$TMP_DIR/config.toml" "$CONFIG"
-  fi
+  env_dir="$(parent_dir "$ENV_FILE")"
+  install -d "$env_dir" "$DATA_DIR"
 
   if [ "$SERVICE_UID" != "0" ] || [ "$SERVICE_USER" != "root" ]; then
     need getent
@@ -179,19 +184,25 @@ install_systemd() {
     fi
   fi
 
-  chown -R "$SERVICE_USER:$SERVICE_GROUP" "$config_dir" "$DATA_DIR" "$LOGS_DIR"
-  chmod -R 750 "$config_dir" "$DATA_DIR" "$LOGS_DIR"
+  cat > "$TMP_DIR/agent.env" <<ENV
+SDHOOK_AGENT_SERVER='$(env_escape "$SERVER")'
+SDHOOK_AGENT_KEY='$(env_escape "$NODE_KEY")'
+SDHOOK_AGENT_TOKEN='$(env_escape "$TOKEN")'
+ENV
+  install -m 0600 "$TMP_DIR/agent.env" "$ENV_FILE"
+  chown -R "$SERVICE_USER:$SERVICE_GROUP" "$env_dir" "$DATA_DIR"
+  chmod -R 750 "$env_dir" "$DATA_DIR"
 
-  copy_deploy_file "systemd/sdhook.service.tpl" "$TMP_DIR/sdhook.service.tpl"
+  copy_deploy_file "systemd/sdhook-agent.service.tpl" "$TMP_DIR/sdhook-agent.service.tpl"
   sed \
     -e "s|{{USER}}|$(sed_escape "$SERVICE_USER")|g" \
     -e "s|{{GROUP}}|$(sed_escape "$SERVICE_GROUP")|g" \
     -e "s|{{BIN}}|$(sed_escape "$BIN_DEST")|g" \
-    -e "s|{{CONFIG}}|$(sed_escape "$CONFIG")|g" \
-    -e "s|{{WORKING_DIR}}|$(sed_escape "$config_dir")|g" \
-    "$TMP_DIR/sdhook.service.tpl" \
-    > "$TMP_DIR/sdhook.service"
-  install -m 0644 "$TMP_DIR/sdhook.service" "$SYSTEMD_UNIT"
+    -e "s|{{ENV_FILE}}|$(sed_escape "$ENV_FILE")|g" \
+    -e "s|{{WORKING_DIR}}|$(sed_escape "$DATA_DIR")|g" \
+    "$TMP_DIR/sdhook-agent.service.tpl" \
+    > "$TMP_DIR/sdhook-agent.service"
+  install -m 0644 "$TMP_DIR/sdhook-agent.service" "$SYSTEMD_UNIT"
 
   systemctl daemon-reload
   unit_name="${SYSTEMD_UNIT##*/}"
@@ -205,7 +216,7 @@ install_systemd() {
     else
       systemctl start "$unit_name"
     fi
-    echo "SDHook systemd service is running."
+    echo "SDHook agent systemd service is running."
     echo "View logs: journalctl -u $unit_name -f"
   fi
 }
