@@ -116,7 +116,35 @@ curl -fsSL https://raw.githubusercontent.com/huwenlong92/sdhook/main/scripts/ins
   sudo env INSTALL_SYSTEMD=1 SERVER=https://sdhook.example.com NODE_KEY=server-a TOKEN=xxx sh
 ```
 
+Install a specific agent version:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/huwenlong92/sdhook/main/scripts/install-agent.sh | \
+  sudo env INSTALL_SYSTEMD=1 VERSION=0.1.10 SERVER=https://sdhook.example.com NODE_KEY=server-a TOKEN=xxx sh
+```
+
+Install only the agent binary without systemd:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/huwenlong92/sdhook/main/scripts/install-agent.sh | sh
+```
+
 With `INSTALL_SYSTEMD=1`, `install-agent.sh` writes `/etc/sdhook-agent/agent.env`, renders `/etc/systemd/system/sdhook-agent.service`, runs `systemctl daemon-reload`, enables the unit, and starts it. If the unit is already active, the installer restarts it so an upgraded agent binary takes effect.
+
+The generated environment file looks like this:
+
+```text
+SDHOOK_AGENT_SERVER='https://sdhook.example.com'
+SDHOOK_AGENT_KEY='server-a'
+SDHOOK_AGENT_TOKEN='xxx'
+```
+
+Check the agent service:
+
+```bash
+systemctl status sdhook-agent
+journalctl -u sdhook-agent -f
+```
 
 On startup, the agent sends an initial heartbeat. If the first connection never succeeds, the process exits so installation or token problems are visible immediately. After the agent has connected once, it keeps retrying heartbeat, long polling, and final job status reporting when the main SDHook instance is down, restarting, or temporarily unreachable.
 
