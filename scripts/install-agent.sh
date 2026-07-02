@@ -218,21 +218,16 @@ copy_deploy_file() {
     cp "$DEPLOY_DIR/$rel_path" "$dest"
     return
   fi
+  if [ "$rel_path" = "systemd/sdhook-agent.service.tpl" ]; then
+    write_builtin_agent_service_template "$dest"
+    return
+  fi
   if [ "${TAG:-local}" = "local" ]; then
     echo "DEPLOY_DIR is required when INSTALL_SYSTEMD=1 with SDHOOK_AGENT_BIN_PATH" >&2
     exit 1
   fi
   need curl
-  if curl_file "https://raw.githubusercontent.com/${REPO}/${TAG}/deploy/${rel_path}" "$dest"; then
-    return
-  fi
-  if [ "$rel_path" = "systemd/sdhook-agent.service.tpl" ]; then
-    echo "using built-in systemd template fallback" >&2
-    write_builtin_agent_service_template "$dest"
-    return
-  fi
-  echo "failed to fetch deploy template: ${rel_path}" >&2
-  exit 1
+  curl_file "https://raw.githubusercontent.com/${REPO}/${TAG}/deploy/${rel_path}" "$dest"
 }
 
 install_systemd() {

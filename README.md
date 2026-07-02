@@ -369,7 +369,7 @@ sdhook-agent-linux-amd64.tar.gz
 
 Server and agent archives share the same release tag. During rolling upgrades, the installed server and agent versions may temporarily differ; the Web UI shows each agent version from heartbeat data.
 
-Each archive contains only the binary and `README.md`. Deploy templates and install scripts are kept in the repository:
+Each archive contains only the binary and `README.md`. Install scripts include default config and systemd templates, so systemd installs do not need to fetch deploy templates from `raw.githubusercontent.com`. Repository deploy files are still kept for packaging, review, and `DEPLOY_DIR=/path/to/deploy` overrides:
 
 ```text
 scripts/install.sh

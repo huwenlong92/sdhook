@@ -92,6 +92,50 @@ release_asset_url() {
   fi
 }
 
+write_builtin_config_template() {
+  cat > "$1" <<'TOML'
+# HTTP 服务监听端口，Web UI 和 webhook 都使用这个端口。
+port = 9000
+
+# 线上部署日志目录。
+logs_dir = "/var/log/sdhook"
+
+# 用户、项目配置、部署记录和回滚记录的数据库配置。
+[database]
+# 数据库驱动。当前可用 SQLite。
+driver = "sqlite"
+
+# SQLite 属于应用运行状态数据，线上放在 /var/lib/sdhook。
+# 命令行可用 --db-path 覆盖。
+path = "/var/lib/sdhook/sdhook.db"
+
+# Postgres 连接地址预留。
+# 命令行可用 --db-url 覆盖。
+# url = "postgres://sdhook:password@127.0.0.1:5432/sdhook"
+TOML
+}
+
+write_builtin_server_service_template() {
+  cat > "$1" <<'UNIT'
+[Unit]
+Description=SDHook webhook deployment service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{USER}}
+Group={{GROUP}}
+ExecStart={{BIN}} --config {{CONFIG}}
+Restart=always
+RestartSec=3
+WorkingDirectory={{WORKING_DIR}}
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+}
+
 need install
 need sed
 
@@ -177,6 +221,14 @@ copy_deploy_file() {
   dest="$2"
   if [ -n "$DEPLOY_DIR" ] && [ -f "$DEPLOY_DIR/$rel_path" ]; then
     cp "$DEPLOY_DIR/$rel_path" "$dest"
+    return
+  fi
+  if [ "$rel_path" = "sdhook/config.toml" ]; then
+    write_builtin_config_template "$dest"
+    return
+  fi
+  if [ "$rel_path" = "systemd/sdhook.service.tpl" ]; then
+    write_builtin_server_service_template "$dest"
     return
   fi
   if [ "${TAG:-local}" = "local" ]; then
