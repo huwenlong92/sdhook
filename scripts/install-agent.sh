@@ -15,7 +15,7 @@ SERVICE_UID="${SERVICE_UID:-0}"
 SERVICE_GID="${SERVICE_GID:-0}"
 NO_START="${NO_START:-0}"
 DATA_DIR="${DATA_DIR:-/var/lib/sdhook-agent}"
-ENV_FILE="${ENV_FILE:-/etc/sdhook-agent/agent.env}"
+CONFIG="${CONFIG:-${SDHOOK_AGENT_CONFIG:-/etc/sdhook/agent.toml}}"
 SYSTEMD_UNIT="${SYSTEMD_UNIT:-/etc/systemd/system/sdhook-agent.service}"
 DEPLOY_DIR="${DEPLOY_DIR:-}"
 SDHOOK_AGENT_BIN_PATH="${SDHOOK_AGENT_BIN_PATH:-}"
@@ -38,8 +38,8 @@ sed_escape() {
   printf '%s' "$1" | sed 's/[|&\\]/\\&/g'
 }
 
-env_escape() {
-  printf '%s' "$1" | sed "s/'/'\"'\"'/g"
+toml_escape() {
+  printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
 }
 
 need install
@@ -112,11 +112,14 @@ else
   fi
 fi
 
-BIN_DEST="$PREFIX/bin/sdhook-agent"
+BIN_DIR="$PREFIX/bin"
+BIN_DEST="$BIN_DIR/sdhook-agent"
 
 echo "[4/5] Installing to ${BIN_DEST}"
-install -d "$PREFIX/bin"
-install -m 0755 "$BIN_PATH" "$BIN_DEST"
+install -d "$BIN_DIR"
+BIN_TMP="$BIN_DIR/.sdhook-agent.$$"
+install -m 0755 "$BIN_PATH" "$BIN_TMP"
+mv -f "$BIN_TMP" "$BIN_DEST"
 
 copy_deploy_file() {
   rel_path="$1"
@@ -150,8 +153,9 @@ install_systemd() {
   need sed
   need systemctl
 
-  env_dir="$(parent_dir "$ENV_FILE")"
-  install -d "$env_dir" "$DATA_DIR"
+  config_dir="$(parent_dir "$CONFIG")"
+  install -d -m 0755 "$config_dir"
+  install -d "$DATA_DIR"
 
   if [ "$SERVICE_UID" != "0" ] || [ "$SERVICE_USER" != "root" ]; then
     need getent
@@ -184,21 +188,23 @@ install_systemd() {
     fi
   fi
 
-  cat > "$TMP_DIR/agent.env" <<ENV
-SDHOOK_AGENT_SERVER='$(env_escape "$SERVER")'
-SDHOOK_AGENT_KEY='$(env_escape "$NODE_KEY")'
-SDHOOK_AGENT_TOKEN='$(env_escape "$TOKEN")'
-ENV
-  install -m 0600 "$TMP_DIR/agent.env" "$ENV_FILE"
-  chown -R "$SERVICE_USER:$SERVICE_GROUP" "$env_dir" "$DATA_DIR"
-  chmod -R 750 "$env_dir" "$DATA_DIR"
+  cat > "$TMP_DIR/config.toml" <<TOML
+server = "$(toml_escape "$SERVER")"
+key = "$(toml_escape "$NODE_KEY")"
+token = "$(toml_escape "$TOKEN")"
+TOML
+  install -m 0600 "$TMP_DIR/config.toml" "$CONFIG"
+  chown "$SERVICE_USER:$SERVICE_GROUP" "$CONFIG"
+  chown -R "$SERVICE_USER:$SERVICE_GROUP" "$DATA_DIR"
+  chmod 0600 "$CONFIG"
+  chmod -R 750 "$DATA_DIR"
 
   copy_deploy_file "systemd/sdhook-agent.service.tpl" "$TMP_DIR/sdhook-agent.service.tpl"
   sed \
     -e "s|{{USER}}|$(sed_escape "$SERVICE_USER")|g" \
     -e "s|{{GROUP}}|$(sed_escape "$SERVICE_GROUP")|g" \
     -e "s|{{BIN}}|$(sed_escape "$BIN_DEST")|g" \
-    -e "s|{{ENV_FILE}}|$(sed_escape "$ENV_FILE")|g" \
+    -e "s|{{CONFIG}}|$(sed_escape "$CONFIG")|g" \
     -e "s|{{WORKING_DIR}}|$(sed_escape "$DATA_DIR")|g" \
     "$TMP_DIR/sdhook-agent.service.tpl" \
     > "$TMP_DIR/sdhook-agent.service"

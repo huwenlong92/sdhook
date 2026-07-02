@@ -141,11 +141,12 @@ install_systemd() {
   need systemctl
 
   config_dir="$(parent_dir "$CONFIG")"
-  install -d "$config_dir" "$DATA_DIR" "$LOGS_DIR"
+  install -d -m 0755 "$config_dir"
+  install -d "$DATA_DIR" "$LOGS_DIR"
 
   if [ ! -f "$CONFIG" ]; then
     copy_deploy_file "sdhook/config.toml" "$TMP_DIR/config.toml"
-    install -m 0644 "$TMP_DIR/config.toml" "$CONFIG"
+    install -m 0640 "$TMP_DIR/config.toml" "$CONFIG"
   fi
 
   if [ "$SERVICE_UID" != "0" ] || [ "$SERVICE_USER" != "root" ]; then
@@ -179,8 +180,10 @@ install_systemd() {
     fi
   fi
 
-  chown -R "$SERVICE_USER:$SERVICE_GROUP" "$config_dir" "$DATA_DIR" "$LOGS_DIR"
-  chmod -R 750 "$config_dir" "$DATA_DIR" "$LOGS_DIR"
+  chown "$SERVICE_USER:$SERVICE_GROUP" "$CONFIG"
+  chmod 0640 "$CONFIG"
+  chown -R "$SERVICE_USER:$SERVICE_GROUP" "$DATA_DIR" "$LOGS_DIR"
+  chmod -R 750 "$DATA_DIR" "$LOGS_DIR"
 
   copy_deploy_file "systemd/sdhook.service.tpl" "$TMP_DIR/sdhook.service.tpl"
   sed \

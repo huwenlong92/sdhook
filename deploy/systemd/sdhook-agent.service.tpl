@@ -8,8 +8,7 @@ Type=simple
 User={{USER}}
 Group={{GROUP}}
 WorkingDirectory={{WORKING_DIR}}
-EnvironmentFile={{ENV_FILE}}
-ExecStart={{BIN}}
+ExecStart={{BIN}} --config {{CONFIG}}
 Restart=always
 RestartSec=5
 
