@@ -122,6 +122,7 @@ WorkingDirectory={{WORKING_DIR}}
 ExecStart={{BIN}} --config {{CONFIG}}
 Restart=always
 RestartSec=5
+TimeoutStopSec=3700
 
 [Install]
 WantedBy=multi-user.target
