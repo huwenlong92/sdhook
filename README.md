@@ -20,6 +20,7 @@ Supported webhook sources:
 - Manual deploy and webhook-triggered deploy.
 - Git branch/tag deploy target support.
 - Actual running image IDs and release labels collected after deployments by the server or agent.
+- Persist successful current-version probes for list/detail views; show full image IDs and retain known versions when verification fails.
 - Live version refresh via read-only Agent jobs; image projects do not require a rollback strategy (Agent 0.1.29+). Shared Compose directories match containers by the project repository rule (Agent 0.1.30+).
 - Multi-node deploy through the standalone `sdhook-agent` binary.
 - Realtime deploy and rollback progress through SSE.
