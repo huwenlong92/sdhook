@@ -16,9 +16,10 @@ Supported webhook sources:
 - Built-in Web UI.
 - SQLite by default.
 - Project groups, project targets, deploy records, rollback records, and node records.
+- Single and batch project copying with environment, group, node, and directory overrides.
 - Manual deploy and webhook-triggered deploy.
 - Git branch/tag deploy target support.
-- Docker image version probing for Docker Compose projects.
+- Actual running image IDs and release labels collected after deployments by the server or agent.
 - Multi-node deploy through the standalone `sdhook-agent` binary.
 - Realtime deploy and rollback progress through SSE.
 - systemd install scripts for both server and agent.
